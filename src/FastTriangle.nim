@@ -4,8 +4,7 @@ import
   aglet/window,
   aglet/window/glfw,
   glm/mat_transform,
-  Obj,
-  print
+  Obj
 
 type
   Vertex = object
@@ -40,12 +39,12 @@ when isMainModule:
 
   var
     objModel = parseObj(readFile("./barrel.obj"))
-    program = newProgram[Vertex](win, vertSource, fragSource)
-    mesh    = newMesh[Vertex](win, muStatic, dpTriangles)
+    program  = newProgram[Vertex](win, vertSource, fragSource)
+    mesh     = newMesh[Vertex](win, muStatic, dpTriangles)
 
-  print objModel.pos.len
+  echo "Model loaded with ", $objModel.numVertices(), " vertices"
 
-  var vertices: seq[Vertex]
+  var vertices = newSeq[Vertex](objModel.numVertices())
 
   for i, vertex in objModel:
     let v = Vertex(position: vertex.pos, colour: vertex.nor)

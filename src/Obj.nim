@@ -4,38 +4,46 @@ type
   ObjData = object
     pos*: seq[Vec3f]
     nor*: seq[Vec3f]
-    txc*: seq[Vec2f]
+    txc*: seq[Vec3f]
 
-  ObjVertex = tuple[pos, nor: Vec3f, txc: Vec2f]
+  ObjVertex = tuple[pos, nor, txc: Vec3f]
+
+func isValid*(obj: ObjData): bool =
+  return
+    (obj.pos.len == obj.nor.len) and
+    (obj.txc.len == obj.pos.len or obj.txc.len == 0)
+
+func numVertices*(obj: ObjData): int =
+  assert obj.isValid()
+  obj.pos.len
+
+func hasTexCoords*(obj: ObjData): bool =
+  obj.txc.len != 0
 
 iterator pairs*(obj: ObjData): (int, ObjVertex) =
-  assert obj.pos.len == obj.nor.len
-  assert obj.txc.len == obj.pos.len or obj.txc.len == 0
-  let
-    numVertices = obj.pos.len
-    haveTexCoords = obj.txc.len == 0
-
-  for i in 0 ..< numVertices:
+  assert obj.isValid()
+  for i in 0 ..< obj.numVertices():
     yield (i, (
       pos: obj.pos[i],
       nor: obj.nor[i],
-      txc: (if haveTexCoords: obj.txc[i] else: vec2f(0.0))
+      txc: (if obj.hasTexCoords(): obj.txc[i] else: vec3f(0.0))
     ))
 
 iterator items*(obj: ObjData): ObjVertex =
   for (i, v) in obj.pairs():
     yield v
 
-func toVec[N : static[int]](strs: seq[string]): Vec[N, float32] =
-  assert strs.len == N
-  for i in 0 ..< N:
+### Convert a sequence of strings, each containing one float, to a vector.
+func toVec[N : static[int]](strs: seq[string], fillWithZeroes: bool = false): Vec[N, float32] =
+  assert fillWithZeroes or (strs.len == N)
+  assert result.arr.allIt(it == 0.0)
+  for i in 0 ..< strs.len:
     result.arr[i] = parseFloat(strs[i])
 
 type ObjIndices = tuple[pos, nor, txc: int]
 const objIndexNotSet = -1
 
 func faceToIndices(restOfLine: seq[string]): seq[ObjIndices] =
-  assert restOfLine.len in [3, 4], "We only support quads or triangles."
   for face in restOfLine:
     let indices = face.split("/").mapIt(it.parseInt()).mapIt(it - 1)
     assert indices.len in [2, 3]
@@ -53,7 +61,7 @@ func parseObj*(fileContents: string): ObjData =
   var
     uniquePos: seq[Vec3f]
     uniqueNor: seq[Vec3f]
-    uniqueTxc: seq[Vec2f]
+    uniqueTxc: seq[Vec3f]
 
   for line in fileContents.splitLines():
     let splitLine = line.splitWhitespace()
@@ -64,13 +72,16 @@ func parseObj*(fileContents: string): ObjData =
       token = splitLine[0]
       restOfLine = splitLine[1 ..< splitLine.len]
 
-
     case token
     of "v" : uniquePos.add toVec[3](restOfLine)
     of "vn": uniqueNor.add toVec[3](restOfLine)
-    of "vt": uniqueTxc.add toVec[2](restOfLine)
+    of "vt": uniqueTxc.add toVec[3](restOfLine, fillWithZeroes = true)
     of "f" :
-      let indices = faceToIndices(restOfLine)
+      let
+        indices = faceToIndices(restOfLine)
+        numVerticesInFace = restOfLine.len
+
+      assert numVerticesInFace in [3, 4], "We only support quads or triangles."
 
       template addVertex(triangle: ObjIndices): untyped =
         assert triangle.pos < uniquePos.len
@@ -81,26 +92,19 @@ func parseObj*(fileContents: string): ObjData =
           assert triangle.txc < uniqueTxc.len
           result.txc.add uniqueTxc[triangle.txc]
 
-      case restOfLine.len
+      template addVertices(triangles: openArray[ObjIndices]): untyped =
+        for t in triangles:
+          addVertex t
+
+      case numVerticesInFace
       of 3:
         # Triangle
-        for idx in indices:
-          addVertex idx
+        addVertices indices
       of 4:
         # Quad
-        let
-          a = indices[0]
-          b = indices[1]
-          c = indices[2]
-          d = indices[3]
-
-        addVertex a
-        addVertex b
-        addVertex c
-
-        addVertex c
-        addVertex d
-        addVertex a
+        let (a, b, c, d) = (indices[0], indices[1], indices[2], indices[3])
+        addVertices [a, b, c]
+        addVertices [c, d, a]
       else:
         # This should be caught by the assert in faceToIndices.
         assert false
